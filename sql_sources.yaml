@@ -1,0 +1,17 @@
+# One entry per SQL Server table / query. Each row becomes one searchable document.
+sources:
+  - name: customers
+    table: dbo.customers             # schema.table
+    primary_key: id
+    text_columns: [name, city, notes]      # embed only meaningful text columns (skip binary/blob columns)
+    metadata_columns: [id, city]
+    interval_seconds: 300            # polling = safety net; triggers + outbox give near-real-time
+
+  # Joined / filtered data: use a custom query instead of `table`.
+  # (Real-time then re-syncs the whole source on each change, which is correct but heavier.)
+  # - name: orders_view
+  #   query: >
+  #     SELECT o.id, c.name AS customer, o.status, o.notes
+  #     FROM dbo.orders o JOIN dbo.customers c ON c.id = o.customer_id
+  #   primary_key: id
+  #   interval_seconds: 120

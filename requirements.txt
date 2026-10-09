@@ -1,0 +1,19 @@
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+python-multipart==0.0.*
+pydantic-settings==2.*
+qdrant-client==1.12.*
+openai>=1.50
+langchain-text-splitters==0.3.*
+pypdf==5.*
+python-docx==1.*
+pandas==2.*
+SQLAlchemy==2.*
+pyodbc==5.*          # SQL Server (needs Microsoft ODBC Driver 18 installed on the machine)
+pymssql==2.3.*       # SQL Server alternative with no ODBC driver (use mssql+pymssql:// URL)
+PyYAML==6.*
+watchdog==5.*
+APScheduler==3.10.*
+# Optional:
+# sentence-transformers==3.*   # only if EMBEDDING_PROVIDER=local
+# psycopg2-binary==2.9.*       # only for PostgreSQL sources
