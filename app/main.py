@@ -13,10 +13,30 @@ from .config import FILES_DIR, SUPPORTED_EXT, settings
 from .ingest import ingest_file, remove_doc
 from .manifest import manifest
 from .rag import answer
-from .sql_sync import listen_forever, load_sources, outbox_worker, sync_source
+from .sql_sync import (
+    fetch_pm_rag_tools,
+    listen_forever,
+    load_sources,
+    outbox_worker,
+    preview_source_rows,
+    sync_source,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 SOURCES = load_sources()
+
+
+def _initial_sql_sync():
+    if not SOURCES:
+        return
+    log = logging.getLogger("main")
+    for s in SOURCES:
+        try:
+            stats = sync_source(s)
+            if stats.get("indexed") or stats.get("deleted"):
+                log.info("startup sql sync %s", stats)
+        except Exception:
+            log.exception("startup sql sync failed for %s", s.name)
 
 
 @asynccontextmanager
@@ -24,6 +44,8 @@ async def lifespan(app: FastAPI):
     vectorstore.ensure_collection()
     threading.Thread(target=watcher.initial_scan, daemon=True).start()
     observer = watcher.start()
+    if SOURCES and settings.database_url:
+        threading.Thread(target=_initial_sql_sync, daemon=True).start()
 
     sched = BackgroundScheduler()
     for s in SOURCES:   # polling = safety net that also catches deletes / missed notifications
@@ -108,3 +130,21 @@ def sync_sql_now():
 def health():
     return {"ok": True, "sql_sources": [s.name for s in SOURCES],
             "realtime_outbox": settings.realtime_outbox, "realtime_postgres": settings.realtime_postgres}
+
+
+@app.get("/sql/pm-rag-tools")
+def sql_pm_rag_tools(project_name: str | None = None, limit: int = 1000):
+    """Live PMRagTool rows (Description, ProjectName, Level) from SQL Server."""
+    if not settings.database_url:
+        raise HTTPException(503, "DATABASE_URL is not configured")
+    return {"source": "dbo.PMRagTool", "project_name": project_name, "rows": fetch_pm_rag_tools(project_name, limit)}
+
+
+@app.get("/sql/preview/{source_name}")
+def sql_preview_source(source_name: str, limit: int = 500):
+    """Live preview of any entry in sql_sources.yaml."""
+    if not settings.database_url:
+        raise HTTPException(503, "DATABASE_URL is not configured")
+    if not any(s.name == source_name for s in SOURCES):
+        raise HTTPException(404, f"Unknown SQL source: {source_name}")
+    return {"source": source_name, "rows": preview_source_rows(source_name, limit)}

@@ -55,7 +55,65 @@ def load_sources() -> list[SQLSource]:
     return [SQLSource(**s) for s in cfg.get("sources", [])]
 
 
+def get_source(name: str) -> SQLSource | None:
+    return next((s for s in load_sources() if s.name == name), None)
+
+
 _engine = create_engine(settings.database_url, pool_pre_ping=True) if settings.database_url else None
+
+_PM_RAG_TOOL_SQL = """
+    SELECT t.Id, t.ProjectName, t.Description, t.Level, l.Name AS LevelName
+    FROM dbo.PMRagTool t
+    LEFT JOIN dbo.PMRagToolLevel l ON t.Level = l.Id
+"""
+
+
+def fetch_pm_rag_tools(project_name: str | None = None, limit: int = 1000) -> list[dict]:
+    """Live rows from dbo.PMRagTool (for UI preview, not the vector index)."""
+    if _engine is None:
+        return []
+    limit = max(1, min(int(limit), 5000))
+    sql = _PM_RAG_TOOL_SQL.strip()
+    params: dict = {}
+    if project_name:
+        sql += " WHERE t.ProjectName = :project_name"
+        params["project_name"] = project_name
+    sql += " ORDER BY t.Id"
+    if _engine.dialect.name == "mssql":
+        sql = sql.replace("SELECT t.Id", f"SELECT TOP {limit} t.Id", 1)
+    else:
+        sql += f" LIMIT {limit}"
+    with _engine.connect() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+    return [_json_safe_row(dict(r)) for r in rows]
+
+
+def preview_source_rows(source_name: str, limit: int = 500) -> list[dict]:
+    """SELECT * (or custom query) for a configured sql_sources entry."""
+    src = get_source(source_name)
+    if src is None or _engine is None:
+        return []
+    limit = max(1, min(int(limit), 5000))
+    inner = src.select_sql.strip().rstrip(";")
+    if _engine.dialect.name == "mssql":
+        sql = f"SELECT TOP {limit} * FROM ({inner}) AS _preview"
+    else:
+        sql = f"SELECT * FROM ({inner}) AS _preview LIMIT {limit}"
+    with _engine.connect() as conn:
+        rows = conn.execute(text(sql)).mappings().all()
+    return [_json_safe_row(dict(r)) for r in rows]
+
+
+def _json_safe_row(row: dict) -> dict:
+    out = {}
+    for k, v in row.items():
+        if hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        elif isinstance(v, (bytes, bytearray)):
+            out[k] = v.decode("utf-8", errors="replace")
+        else:
+            out[k] = v
+    return out
 
 
 def _render(src: SQLSource, row: dict) -> tuple[str, dict]:
