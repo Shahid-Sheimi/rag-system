@@ -1,11 +1,36 @@
 # One entry per SQL Server table / query. Each row becomes one searchable document.
+# Alci DB — add/remove sources here; then POST /sync/sql or restart the app.
 sources:
-  - name: customers
-    table: dbo.customers             # schema.table
-    primary_key: id
-    text_columns: [name, city, notes]      # embed only meaningful text columns (skip binary/blob columns)
-    metadata_columns: [id, city]
-    interval_seconds: 300            # polling = safety net; triggers + outbox give near-real-time
+  - name: pm_rag_tools
+    query: >
+      SELECT t.Id, t.Description, t.ProjectName, t.Level, l.Name AS LevelName
+      FROM dbo.PMRagTool t
+      LEFT JOIN dbo.PMRagToolLevel l ON t.Level = l.Id
+    primary_key: Id
+    text_columns: [Description, ProjectName, LevelName]
+    metadata_columns: [Id, Level]
+    interval_seconds: 60
+
+  - name: interview_turns
+    table: dbo.AlciInterviewTurn
+    primary_key: Id
+    text_columns: [Speaker, Text, Phase, GapId]
+    metadata_columns: [InterviewId, Seq, TurnId]
+    interval_seconds: 300
+
+  - name: interviews
+    table: dbo.AlciInterview
+    primary_key: Id
+    text_columns: [CandidateFullName, CandidateEmail, JobTitle, StatusReason]
+    metadata_columns: [InterviewUid, TenantId, InterviewStatusId]
+    interval_seconds: 300
+
+  - name: knowledge_bases
+    table: dbo.AlciKnowledgeBase
+    primary_key: Id
+    text_columns: [KnowledgeBaseName, QdrantCollectionName]
+    metadata_columns: [TenantId, TenantCompanyId, KbStatusId]
+    interval_seconds: 300
 
   # Joined / filtered data: use a custom query instead of `table`.
   # (Real-time then re-syncs the whole source on each change, which is correct but heavier.)
